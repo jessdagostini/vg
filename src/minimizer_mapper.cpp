@@ -238,10 +238,14 @@ void MinimizerMapper::dump_debug_extension_set(const HandleGraph& graph, const A
     
     if (aln.sequence().size() >= LONG_LIMIT) {
         // Describe the extensions, because the read is huge
+        cerr << "\n\nNEW" << endl;
         cerr << log_name() << "<" << extended_seeds.size() << " extensions>" << endl;
     } else {
+        cerr << "\n\nNEW" << endl;
         // Show a diagram
         dump_debug_sequence(cerr, aln.sequence());
+
+        cerr << "< sequence" << endl;
         
         for (auto& ext : extended_seeds) {
             // For each extension
@@ -843,7 +847,11 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
             }
 
             auto& extensions = cluster_extensions[extension_num];
-
+            #pragma omp critical (cerr)
+            {
+                dump_debug_extension_set(gbwt_graph, aln, extensions);
+            }
+            
             // Collect the top alignments. Make sure we have at least one always, starting with unaligned.
             vector<Alignment> best_alignments(1, aln);
 
