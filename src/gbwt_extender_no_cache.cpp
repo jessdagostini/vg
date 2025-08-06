@@ -5,7 +5,7 @@
 #include <cstring>
 #include <queue>
 #include <set>
-#include "time-utils.h"
+// #include "time-utils.h"
 
 #include <structures/immutable_list.hpp>
 
@@ -664,7 +664,8 @@ bool trim_mismatches(GaplessExtension& extension, const gbwtgraph::GBWTGraph& gr
 //------------------------------------------------------------------------------
 
 std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std::string sequence, const gbwtgraph::CachedGBWTGraph* cache, size_t max_mismatches, double overlap_threshold) const {
-    double start = omp_get_wtime();
+    // double start = omp_get_wtime();
+    // cout << "Entrou extend no cache" << endl;
 
     std::vector<GaplessExtension> result;
     if (this->graph == nullptr || this->aligner == nullptr || cluster.empty() || sequence.empty()) {
@@ -674,10 +675,10 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
     this->mask(sequence);
 
     // Allocate a cache if we were not provided with one.
-    bool free_cache = (cache == nullptr);
-    if (free_cache) {
-        cache = new gbwtgraph::CachedGBWTGraph(*(this->graph));
-    }
+    // bool free_cache = (cache == nullptr);
+    // if (free_cache) {
+    //     cache = new gbwtgraph::CachedGBWTGraph(*(this->graph));
+    // }
 
     // Find the best extension starting from each seed.
     size_t best_alignment = std::numeric_limits<size_t>::max();
@@ -687,7 +688,8 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
 
         // Check if the seed is contained in an exact full-length alignment.
         if (best_alignment < result.size() && result[best_alignment].internal_score == 0) {
-            if (result[best_alignment].contains(*cache, seed)) {
+            if (result[best_alignment].contains(*this->graph, seed)) {
+                // std::cerr << "Contains on result" << std::endl;
                 continue;
             }
         }
@@ -705,12 +707,12 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
             size_t read_offset = get_read_offset(seed);
             size_t node_offset = get_node_offset(seed);
             GaplessExtension match {
-                { seed.first }, node_offset, cache->get_bd_state(seed.first),
+                { seed.first }, node_offset, this->graph->get_bd_state(seed.first),
                 { read_offset, read_offset }, { },
                 static_cast<int32_t>(0), false, false,
                 false, false, static_cast<uint32_t>(0), static_cast<uint32_t>(0)
             };
-            match_initial(match, sequence, cache->get_sequence_view(seed.first));
+            match_initial(match, sequence, this->graph->get_sequence_view(seed.first));
             if (match.read_interval.first == 0) {
                 match.left_full = true;
                 match.left_maximal = true;
@@ -736,7 +738,7 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
                 uint32_t mismatch_limit = std::max(
                     static_cast<uint32_t>(max_mismatches + 1),
                     static_cast<uint32_t>(max_mismatches / 2 + curr.old_score + 1));
-                cache->follow_paths(curr.state, false, [&](const gbwt::BidirectionalState& next_state) -> bool {
+                this->graph->follow_paths(curr.state, false, [&](const gbwt::BidirectionalState& next_state) -> bool {
                     handle_t handle = gbwtgraph::GBWTGraph::node_to_handle(next_state.forward.node);
                     GaplessExtension next {
                         { }, curr.offset, next_state,
@@ -744,7 +746,7 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
                         curr.score, curr.left_full, curr.right_full,
                         curr.left_maximal, curr.right_maximal, curr.internal_score, curr.old_score
                     };
-                    size_t node_offset = match_forward(next, sequence, cache->get_sequence_view(handle), mismatch_limit);
+                    size_t node_offset = match_forward(next, sequence, this->graph->get_sequence_view(handle), mismatch_limit);
                     if (node_offset == 0) { // Did not match anything.
                         return true;
                     }
@@ -754,7 +756,7 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
                         next.right_full = true;
                         next.right_maximal = true;
                         next.old_score = next.internal_score;
-                    } else if (node_offset < cache->get_length(handle)) {
+                    } else if (node_offset < this->graph->get_length(handle)) {
                         next.right_maximal = true;
                         next.old_score = next.internal_score;
                     }
@@ -780,16 +782,16 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
                 uint32_t mismatch_limit = std::max(
                     static_cast<uint32_t>(max_mismatches + 1),
                     static_cast<uint32_t>(max_mismatches / 2 + curr.old_score + 1));
-                cache->follow_paths(curr.state, true, [&](const gbwt::BidirectionalState& next_state) -> bool {
+                this->graph->follow_paths(curr.state, true, [&](const gbwt::BidirectionalState& next_state) -> bool {
                     handle_t handle = gbwtgraph::GBWTGraph::node_to_handle(gbwt::Node::reverse(next_state.backward.node));
-                    size_t node_length = cache->get_length(handle);
+                    size_t node_length = this->graph->get_length(handle);
                     GaplessExtension next {
                         { }, node_length, next_state,
                         curr.read_interval, { },
                         curr.score, curr.left_full, curr.right_full,
                         curr.left_maximal, curr.right_maximal, curr.internal_score, curr.old_score
                     };
-                    match_backward(next, sequence, cache->get_sequence_view(handle), mismatch_limit);
+                    match_backward(next, sequence, this->graph->get_sequence_view(handle), mismatch_limit);
                     if (next.offset >= node_length) { // Did not match anything.
                         return true;
                     }
@@ -836,32 +838,30 @@ std::vector<GaplessExtension> GaplessExtender::extend(cluster_type& cluster, std
     // If we have a good enough full-length alignment, return the best sufficiently
     // distinct full-length alignments.
     if (best_alignment < result.size() && result[best_alignment].internal_score <= max_mismatches) {
-        handle_full_length(*cache, result, overlap_threshold);
-        find_mismatches(sequence, *cache, result);
+        handle_full_length(*this->graph, result, overlap_threshold);
+        find_mismatches(sequence, *this->graph, result);
     }
 
     // Otherwise remove duplicates, find mismatches, and trim the extensions to maximize
     // score.
     else {
         remove_duplicates(result);
-        find_mismatches(sequence, *cache, result);
+        find_mismatches(sequence, *this->graph, result);
         bool trimmed = false;
         for (GaplessExtension& extension : result) {
-            trimmed |= trim_mismatches(extension, *cache, *(this->aligner));
+            // std::cerr << "Trim" << std::endl;
+            trimmed |= trim_mismatches(extension, *this->graph, *(this->aligner));
         }
         if (trimmed) {
             remove_duplicates(result);
         }
     }
 
-    double end = omp_get_wtime();
-    time_utils_add(start, end, 0, omp_get_thread_num());
-
     // Free the cache if we allocated it.
-    if (free_cache) {
-        delete cache;
-        cache = nullptr;
-    }
+    // if (free_cache) {
+    //     delete cache;
+    //     cache = nullptr;
+    // }
 
     return result;
 }

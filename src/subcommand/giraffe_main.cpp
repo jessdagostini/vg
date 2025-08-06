@@ -15,6 +15,9 @@
 #include <chrono>
 #include <mutex>
 
+#include "time-utils.h"
+// #include "perf-utils.h"
+
 #include "subcommand.hpp"
 #include "options.hpp"
 
@@ -37,6 +40,7 @@
 #include <gbwtgraph/minimizer.h>
 
 //#define USE_CALLGRIND
+#define debug
 
 #ifdef USE_CALLGRIND
 #include <valgrind/callgrind.h>
@@ -52,6 +56,11 @@ static long perf_event_open(struct perf_event_attr* hw_event, pid_t pid, int cpu
     return syscall(__NR_perf_event_open, hw_event, pid, cpu, group_fd, flags);
 }
 #endif
+
+// VTUNE Library
+// #include <ittnotify.h>
+// CALIPER
+// #include <caliper/cali.h>
 
 using namespace std;
 using namespace vg;
@@ -440,6 +449,8 @@ void help_giraffe(char** argv, const BaseOptionGroup& parser, bool full_help) {
 int main_giraffe(int argc, char** argv) {
 
     std::chrono::time_point<std::chrono::system_clock> launch = std::chrono::system_clock::now();
+    double start_inst = omp_get_wtime();
+    // __itt_pause();
 
     // For haplotype sampling.
     gbwt::Verbosity::set(gbwt::Verbosity::SILENT);
@@ -620,6 +631,7 @@ int main_giraffe(int argc, char** argv) {
 
     int c;
     optind = 2; // force optind past command positional argument
+    // double start_parse = omp_get_wtime();
     while (true) {
         
 
@@ -898,7 +910,10 @@ int main_giraffe(int argc, char** argv) {
         }
     }
 
-   
+    // double end_parse = omp_get_wtime();
+    // time_utils_add(start_parse, end_parse, 0, omp_get_thread_num());
+
+    // double start_io = omp_get_wtime();
     // Get positional arguments before validating user intent
     if (have_input_file(optind, argc, argv)) {
         // Must be the FASTA, but check.
@@ -1229,6 +1244,8 @@ int main_giraffe(int argc, char** argv) {
             }
             cerr << "--rescue-algorithm " << algorithm_names[rescue_algorithm] << endl;
         }
+
+        cerr << "--batch-size " << batch_size << endl;
         minimizer_mapper.rescue_algorithm = rescue_algorithm;
 
         minimizer_mapper.sample_name = sample_name;
@@ -1236,6 +1253,10 @@ int main_giraffe(int argc, char** argv) {
 
         // Apply scoring parameters, after they have been parsed
         minimizer_mapper.set_alignment_scores(scoring_options.match, scoring_options.mismatch, scoring_options.gap_open, scoring_options.gap_extend, scoring_options.full_length_bonus);
+
+        // Jess Insturmentation
+        // double end_io = omp_get_wtime();
+        // time_utils_add(start_io, end_io, 1, omp_get_thread_num());
 
         // Work out the number of threads we will have
         size_t thread_count = omp_get_max_threads();
@@ -1297,8 +1318,11 @@ int main_giraffe(int argc, char** argv) {
         // TODO: we won't count the output thread, but it will appear in CPU time!
 #endif
 
+        // __itt_resume();
+
         // Establish a watchdog to find reads that take too long to map.
         // If we see any, we will issue a warning.
+        // double start_omp = omp_get_wtime();
         unique_ptr<Watchdog> watchdog(new Watchdog(thread_count, chrono::seconds(main_options.watchdog_timeout)));
 
         {
@@ -1492,7 +1516,7 @@ int main_giraffe(int argc, char** argv) {
                     }
                 }
             } else {
-                // Map single-ended
+                // Map single-ended 
 
                 // All the threads start at once.
                 all_threads_start = first_thread_start;
@@ -1541,6 +1565,8 @@ int main_giraffe(int argc, char** argv) {
         
         } // Make sure alignment emitter is destroyed and all alignments are on disk.
         
+        // double end_omp = omp_get_wtime();
+        // time_utils_add(start_omp, end_omp, 11, omp_get_thread_num());
         // Now mapping is done
         std::chrono::time_point<std::chrono::system_clock> end = std::chrono::system_clock::now();
         clock_t cpu_time_after = clock();
@@ -1548,6 +1574,7 @@ int main_giraffe(int argc, char** argv) {
         stop_perf_for_thread();
 #endif
         
+        // __itt_pause();
         // Compute wall clock elapsed
         std::chrono::duration<double> all_threads_seconds = end - all_threads_start;
         std::chrono::duration<double> first_thread_additional_seconds = all_threads_start - first_thread_start;
@@ -1569,6 +1596,7 @@ int main_giraffe(int argc, char** argv) {
                     int problem = errno;
                     cerr << "warning:[vg giraffe] Error closing perf event instruction counter: " << strerror(problem) << endl;
                 }
+                // cerr << "Thread instructions " << thread_instructions << endl;
                 total_instructions += thread_instructions;
             }
         }
@@ -1585,7 +1613,13 @@ int main_giraffe(int argc, char** argv) {
         double reads_per_cpu_second = total_reads_mapped / cpu_seconds;
         double mega_instructions_per_read = total_instructions / (double)total_reads_mapped / 1E6;
         double mega_instructions_per_second = total_instructions / cpu_seconds / 1E6;
+
+        // perf_utils_dump();
+        double end_inst = omp_get_wtime();
+        time_utils_add(start_inst, end_inst, 1, omp_get_thread_num());
         
+        time_utils_dump();
+                
         if (show_progress) {
             // Log to standard error
             cerr << "Mapped " << total_reads_mapped << " reads across "

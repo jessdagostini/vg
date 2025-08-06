@@ -27,6 +27,10 @@
 #include <cmath>
 #include <cfloat>
 
+// #include "time-utils.h"
+#include "perf-event.hpp"
+#include "perf-utils.h"
+
 // Turn on debugging prints
 //#define debug
 // Turn on printing of minimizer fact tables
@@ -535,6 +539,83 @@ void MinimizerMapper::dump_debug_seeds(const VectorView<Minimizer>& minimizers, 
     }
 }
 
+void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence) {
+    // Specify the file name
+    const char* fileName = "dump_proxy_yeast_new.bin";
+
+    // Create an output file stream
+    std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
+
+    if (!outFile) {
+        std::cerr << "Error opening file: " << fileName << std::endl;
+    }
+
+    // Write string to the file
+    if (sequence.empty() || sequence.size() == 0) {
+        std::cerr << "EMPTY SEQUENCE" << std::endl;
+    }
+    outFile.write(sequence.c_str(), sequence.size() + 1); // Include null terminator
+    size_t seeds = cluster.size();
+
+    // Write how many seeds
+    outFile.write(reinterpret_cast<const char*>(&seeds), sizeof(seeds));
+
+    for (GaplessExtender::seed_type seed : cluster) {
+        // Write char array to the file
+        outFile.write(seed.first.data, sizeof(seed.first.data));
+
+        // Write int64_t to the file
+        outFile.write(reinterpret_cast<const char*>(&seed.second), sizeof(seed.second));
+
+    }
+    // Close the file stream
+    outFile.close();
+}
+
+// void MinimizerMapper::dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence) {
+//     // Specify the file name
+//     const char* fileName = "dump_proxy_yeast_new_extension.bin";
+
+//     // Create an output file stream
+//     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
+
+//     if (!outFile) {
+//         std::cerr << "Error opening file: " << fileName << std::endl;
+//     }
+
+//     // Write string to the file
+//     outFile.write(sequence.c_str(), sequence.size() + 1); // Include null terminator
+    
+//     // Write how many extensions we have
+//     size_t extensions = cluster_extension.size();
+//     outFile.write(reinterpret_cast<const char*>(&extensions), sizeof(extensions));
+    
+//     for (auto& e : cluster_extension) {
+//         // Node offset
+//         outFile.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
+        
+//         // Read Interval
+//         outFile.write(reinterpret_cast<const char*>(&e.read_interval), sizeof(e.read_interval));
+        
+//         //Score
+//         outFile.write(reinterpret_cast<const char*>(&e.score), sizeof(e.score));
+        
+//         size_t mismatches = e.mismatch_positions.size();
+//         // Write how many mismatches
+//         outFile.write(reinterpret_cast<const char*>(&mismatches), sizeof(mismatches));
+        
+//         // Mismatches
+//         if (mismatches > 0) {
+//             for (size_t i = 0; i < mismatches; i++) {
+//                 outFile.write(reinterpret_cast<const char*>(&e.mismatch_positions[i]), sizeof(e.mismatch_positions[i]));
+//             }
+//         }
+//     }
+    
+//     // Close the file stream
+//     outFile.close();
+// }
+
 void MinimizerMapper::dump_debug_query(const Alignment& aln) {
     cerr << log_name() << "Read " << aln.name() << ": " ;
     if (aln.sequence().size() < LONG_LIMIT) {
@@ -593,12 +674,20 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
         return aln.sequence();
     });
 
+    double start, end;
+
 
     // Minimizers sorted by score in descending order.
+    // start = omp_get_wtime();
     std::vector<Minimizer> minimizers = this->find_minimizers(aln.sequence(), funnel);
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 2, omp_get_thread_num());
 
     // Find the seeds and mark the minimizers that were located.
+    // start = omp_get_wtime();
     vector<Seed> seeds = this->find_seeds(minimizers, aln, funnel);
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 3, omp_get_thread_num());
 
     // Cluster the seeds. Get sets of input seed indexes that go together.
     if (track_provenance) {
@@ -606,7 +695,10 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     }
 
     // Find the clusters
+    // start = omp_get_wtime();
     std::vector<Cluster> clusters = clusterer.cluster_seeds(seeds, get_distance_limit(aln.sequence().size()));
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 4, omp_get_thread_num());
     
 #ifdef debug_validate_clusters
     vector<vector<Cluster>> all_clusters;
@@ -621,6 +713,8 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     if (this->track_provenance) {
         funnel.substage("score");
     }
+
+    // start = omp_get_wtime();
     double best_cluster_score = 0.0, second_best_cluster_score = 0.0;
     for (size_t i = 0; i < clusters.size(); i++) {
         Cluster& cluster = clusters[i];
@@ -666,8 +760,11 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     vector<vector<size_t>> minimizer_extended_cluster_count; 
 
     size_t kept_cluster_count = 0;
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 5, omp_get_thread_num());
     
     //Process clusters sorted by both score and read coverage
+    // start = omp_get_wtime();
     process_until_threshold_c<double>(clusters.size(), [&](size_t i) -> double {
             return clusters[i].coverage;
         }, [&](size_t a, size_t b) -> bool {
@@ -761,11 +858,16 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
                 }
             }
         });
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 6, omp_get_thread_num());
         
+    // start = omp_get_wtime();
     std::vector<int> cluster_extension_scores = this->score_extensions(cluster_extensions, aln, funnel);
     if (track_provenance) {
         funnel.stage("align");
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 7, omp_get_thread_num());
 
     //How many of each minimizer ends up in an extension set that actually gets turned into an alignment?
     vector<size_t> minimizer_extensions_count(minimizers.size(), 0);
@@ -800,6 +902,7 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     
     // We need to be able to discard a processed cluster because its score isn't good enough.
     // We have more components to the score filter than process_until_threshold_b supports.
+    // start = omp_get_wtime();
     auto discard_processed_cluster_by_score = [&](size_t extension_num) -> void {
         // This extension is not good enough.
         if (track_provenance) {
@@ -817,8 +920,11 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
             }
         }
     };
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 8, omp_get_thread_num());
     
     // Go through the gapless extension groups in score order.
+    // start = omp_get_wtime();
     process_until_threshold_b<int>(cluster_extension_scores,
         extension_set_score_threshold, min_extension_sets, max_alignments, rng, [&](size_t extension_num) -> bool {
             // This extension set is good enough.
@@ -847,10 +953,10 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
             }
 
             auto& extensions = cluster_extensions[extension_num];
-            #pragma omp critical (cerr)
-            {
-                dump_debug_extension_set(gbwt_graph, aln, extensions);
-            }
+            // #pragma omp critical (cerr)
+            // {
+            //     dump_debug_extension_set(gbwt_graph, aln, extensions);
+            // }
             
             // Collect the top alignments. Make sure we have at least one always, starting with unaligned.
             vector<Alignment> best_alignments(1, aln);
@@ -975,6 +1081,8 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
                 }
             }
         }, discard_processed_cluster_by_score);
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 9, omp_get_thread_num());
     
     if (alignments.size() == 0) {
         // Produce an unaligned Alignment
@@ -1000,6 +1108,7 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     vector<double> scores;
     scores.reserve(alignments.size());
     
+    // start = omp_get_wtime();
     process_until_threshold_a(alignments.size(), (std::function<double(size_t)>) [&](size_t i) -> double {
         return alignments.at(i).score();
     }, 0, 1, max_multimaps, rng, [&](size_t alignment_num) {
@@ -1034,6 +1143,8 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
         // Score threshold is 0; this should never happen
         crash_unless(false);
     });
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 10, omp_get_thread_num());
     
     if (track_provenance) {
         funnel.substage("mapq");
@@ -1051,8 +1162,11 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
     crash_unless(!mappings.empty());
     // Compute MAPQ if not unmapped. Otherwise use 0 instead of the 50% this would give us.
     // Use exact mapping quality 
+    // start = omp_get_wtime();
     double mapq = (mappings.front().path().mapping_size() == 0) ? 0 : 
         get_regular_aligner()->compute_max_mapping_quality(scores, false) ;
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 11, omp_get_thread_num());
 
 #ifdef print_minimizer_table
     double uncapped_mapq = mapq;
@@ -1065,6 +1179,7 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
         }
     }
     
+    // start = omp_get_wtime();
     // TODO: give SmallBitset iterators so we can use it instead of an index vector.
     vector<size_t> explored_minimizers;
     for (size_t i = 0; i < minimizers.size(); i++) {
@@ -1169,6 +1284,8 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
             funnel.to_dot(cerr);
         }
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 12, omp_get_thread_num());
 
     return mappings;
 }
@@ -1417,20 +1534,26 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
     std::array<std::vector<size_t>, 2> minimizer_score_order_by_read;
     // Minimizers for both reads, sorted by best score first.
     std::array<VectorView<Minimizer>, 2> minimizers_by_read;
+    // double start = omp_get_wtime();
     for (auto r : {0, 1}) {
         minimizers_in_read_by_read[r] = this->find_minimizers(alns[r]->sequence(), funnels[r]);
         minimizer_score_order_by_read[r] = sort_minimizers_by_score(minimizers_in_read_by_read[r]);
         minimizers_by_read[r] = {minimizers_in_read_by_read[r], minimizer_score_order_by_read[r]};
     }
+    // double end = omp_get_wtime();
+    // time_utils_add(start, end, 2, omp_get_thread_num());
 
     // Seeds for both reads, stored in separate vectors.
     // These *MUST* be std::vector, because the clusterer's internal data
     // structures pass around pointers to std::vector<std::vector<seed type>>.
     // TODO: Let the clusterer use something else?
+    // start = omp_get_wtime();
     std::vector<std::vector<Seed>> seeds_by_read(2);
     for (auto r : {0, 1}) {
         seeds_by_read[r] = this->find_seeds(minimizers_by_read[r], *alns[r], funnels[r]);
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 3, omp_get_thread_num());
 
     // Cluster the seeds. Get sets of input seed indexes that go together.
     if (track_provenance) {
@@ -1438,12 +1561,14 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
             funnels[r].stage("cluster");
         }
     }
-
+    // start = omp_get_wtime();
     std::vector<std::vector<Cluster>> all_clusters = clusterer.cluster_seeds(seeds_by_read, get_distance_limit(aln1.sequence().size()), fragment_distance_limit);
 #ifdef debug_validate_clusters
     validate_clusters(all_clusters, seeds_by_read, get_distance_limit(aln1.sequence().size()), fragment_distance_limit);
 
 #endif
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 4, omp_get_thread_num());
 
 
     //Keep track of which fragment clusters (clusters of clusters) have read clusters from each end
@@ -1491,6 +1616,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
 
 
     //Keep track of the best cluster score and coverage per end for each fragment cluster
+    // start = omp_get_wtime();
     std::array<vector<double>, 2> cluster_score_by_fragment;
     std::array<vector<double>, 2> cluster_coverage_by_fragment;
     for (auto r : {0, 1}) {
@@ -1524,6 +1650,8 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
             best_cluster_coverage[fragment] = std::max(best_cluster_coverage[fragment], cluster.coverage);
         }
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 5, omp_get_thread_num());
 
     //For each fragment cluster, we want to know how many equivalent or better clusters we found
     //We consider two fragment clusters to be "equivalent" if the sum of the best score and
@@ -1648,7 +1776,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
         minimizer_explored_by_read[read_num] = SmallBitset(minimizers.size());
         minimizer_aligned_count_by_read[read_num].resize(minimizers.size(), 0);
         size_t kept_cluster_count = 0;
-        
+        // start = omp_get_wtime();
         //Process clusters sorted by both score and read coverage
         process_until_threshold_c<double>(clusters.size(), [&](size_t i) -> double {
                 return clusters[i].coverage;
@@ -1751,9 +1879,14 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
                 // This cluster is not sufficiently good.
                 // TODO: I don't think it should ever get here unless we limit the scores of the fragment clusters we look at
             });
+        // end = omp_get_wtime();
+        // time_utils_add(start, end, 6, omp_get_thread_num());
 
+        // start = omp_get_wtime();
         // We now estimate the best possible alignment score for each cluster.
         std::vector<int> cluster_alignment_score_estimates = this->score_extensions(cluster_extensions, aln, funnels[read_num]);
+        // end = omp_get_wtime();
+        // time_utils_add(start, end, 7, omp_get_thread_num());
         
         if (track_provenance) {
             funnels[read_num].stage("align");
@@ -1771,6 +1904,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
         //Since we will lose the order in which we pass alignments to the funnel, use this to keep track
         size_t curr_funnel_index = 0;
 
+        // start = omp_get_wtime();
         // Go through the processed clusters in estimated-score order.
         process_until_threshold_b(cluster_alignment_score_estimates,
             extension_set_score_threshold, 2, max_alignments, rng, [&](size_t processed_num) {
@@ -1908,6 +2042,8 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
                     funnels[read_num].fail("extension-set", processed_num, cluster_alignment_score_estimates[processed_num]);
                 }
             });
+        // end = omp_get_wtime();
+        // time_utils_add(start, end, 8, omp_get_thread_num());
         
     }
 
@@ -1954,6 +2090,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
     bool found_pair = false;
 
     //Alignments that don't have a mate
+    // start = omp_get_wtime();
     vector<alignment_index_t> unpaired_alignments;
     std::array<size_t, 2> unpaired_count {0, 0};
 
@@ -2174,7 +2311,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
 
         if (max_rescue_attempts != 0) {
             //Attempt rescue on unpaired alignments if either we didn't find any pairs or if the unpaired alignments are very good
-
+            // start = omp_get_wtime();
             process_until_threshold_a(unpaired_alignments.size(), (std::function<double(size_t)>) [&](size_t i) -> double{
                 return (double) unpaired_alignments.at(i).lookup_in(alignments).score();
             }, 0, 1, max_rescue_attempts, rng, [&](size_t i) {
@@ -2274,8 +2411,12 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
                 }
                 return;
             });
+        // end = omp_get_wtime();
+        // time_utils_add(start, end, 10, omp_get_thread_num());
         }
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 14, omp_get_thread_num());
 
     
     
@@ -2308,6 +2449,7 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
     vector<std::array<read_alignment_index_t, 2>> pair_indices;
 #endif
 
+    // start = omp_get_wtime();
     process_until_threshold_a(paired_alignments.size(), (std::function<double(size_t)>) [&](size_t i) -> double {
         return paired_scores[i];
     }, 0, 1, max_multimaps, rng, [&](size_t alignment_num) {
@@ -2402,12 +2544,15 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
         // Score threshold is 0; this should never happen
         crash_unless(false);
     });
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 10, omp_get_thread_num());
 
     if (track_provenance) {
         for (auto r : {0, 1}) {
             funnels[r].substage("mapq");
         }
     }
+    // start = omp_get_wtime();
 
     
     // Compute raw explored caps (with 2.0 scaling, like for single-end) and raw group caps.
@@ -2501,7 +2646,10 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
             fragment_cluster_cap = prob_to_phred(1.0 - (1.0 / (double) better_cluster_count_by_mappings.front()));
             // Leave zeros in here and don't round.
         }
+        // end = omp_get_wtime();
+        // time_utils_add(start, end, 11, omp_get_thread_num());
 
+        // start = omp_get_wtime();
         for (auto r : {0, 1}) {
             // For each fragment
         
@@ -2620,6 +2768,8 @@ pair<vector<Alignment>, vector<Alignment>> MinimizerMapper::map_paired(Alignment
             set_annotation(mappings[r].front(), "param_max-rescue-attempts", (double) max_rescue_attempts);
         }
     }
+    // end = omp_get_wtime();
+    // time_utils_add(start, end, 12, omp_get_thread_num());
  
 #ifdef print_minimizer_table
 
@@ -3012,6 +3162,7 @@ double MinimizerMapper::get_prob_of_disruption_in_column(const VectorView<Minimi
 //-----------------------------------------------------------------------------
 
 void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& rescued_alignment, const VectorView<Minimizer>& minimizers, bool rescue_forward ) {
+    // double start = omp_get_wtime();
 
     // Get rid of the old path.
     rescued_alignment.clear_path();
@@ -3054,6 +3205,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
     // Find all seeds in the subgraph and try to get a full-length extension.
     GaplessExtender::cluster_type seeds = this->seeds_in_subgraph(minimizers, rescue_nodes);
     if (seeds.size() > this->rescue_seed_limit) {
+        // double end = omp_get_wtime();
+        // time_utils_add(start, end, 1, omp_get_thread_num());
         return;
     }
     std::vector<GaplessExtension> extensions = this->extender->extend(seeds, rescued_alignment.sequence(), &cached_graph);
@@ -3061,6 +3214,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
     // If we have a full-length extension, use it as the rescued alignment.
     if (GaplessExtender::full_length_extensions(extensions)) {
         this->extension_to_alignment(extensions.front(), rescued_alignment);
+        // double end = omp_get_wtime();
+        // time_utils_add(start, end, 1, omp_get_thread_num());
         return;
     }
 
@@ -3105,6 +3260,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
                     << " which would use more than " << max_dozeu_cells
                     << " cells and might exhaust Dozeu's allocator; suppressing further warnings." << endl;
             }
+            // double end = omp_get_wtime();
+            // time_utils_add(start, end, 1, omp_get_thread_num());
             return; 
         }
     
@@ -3116,6 +3273,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
         } else {
             get_regular_aligner()->align(rescued_alignment, cached_graph, topological_order);
         }
+        // double end = omp_get_wtime();
+        // time_utils_add(start, end, 1, omp_get_thread_num());
         return;
     }
 
@@ -3142,6 +3301,8 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
                 << " which would use more than " << max_dozeu_cells
                 << " cells and might exhaust Dozeu's allocator; suppressing further warnings." << endl;
         }
+        // double end = omp_get_wtime();
+        // time_utils_add(start, end, 1, omp_get_thread_num());
         return; 
     }
     
@@ -3171,6 +3332,9 @@ void MinimizerMapper::attempt_rescue(const Alignment& aligned_read, Alignment& r
             cerr << log_name() << "Rescue result: " << log_alignment(rescued_alignment) << endl;
         }
     }
+
+    // double end = omp_get_wtime();
+    // time_utils_add(start, end, 1, omp_get_thread_num());
 }
 
 GaplessExtender::cluster_type MinimizerMapper::seeds_in_subgraph(const VectorView<Minimizer>& minimizers,
@@ -3696,12 +3860,15 @@ vector<GaplessExtension> MinimizerMapper::extend_cluster(const Cluster& cluster,
     const string& sequence,
     vector<vector<size_t>>& minimizer_kept_cluster_count,
     Funnel& funnel) const {
-
     if (track_provenance) {
         // Say we're working on this cluster
         funnel.processing_input(cluster_num);
     }
 
+
+    // VTune
+    // __itt_domain* domain = __itt_domain_create("Example.Domain.Global");
+    // __itt_string_handle* handle_main = __itt_string_handle_create("EXTENSION");
     // Count how many of each minimizer is in each cluster that we kept
     minimizer_kept_cluster_count.emplace_back(minimizers.size(), 0);
     // Pack the seeds for GaplessExtender.
@@ -3719,8 +3886,42 @@ vector<GaplessExtension> MinimizerMapper::extend_cluster(const Cluster& cluster,
             }
         }
     }
+
+    // Dump all seeds for each sequence
+    // #pragma omp critical (cerr)
+    // {
+    //     dump_proxy_seeds(seed_matchings, sequence);
+    // }
+
+    // Dump debug seed_matching a.k.a cluster_type
+    // for (auto seed : seed_matchings) {
+    //     #pragma omp critical (cerr)
+    //     {
+    //         cerr << log_name() << " Sequence: " << sequence << endl;
+    //         cerr << log_name() << " Seed data: ";
+    //         for (auto d : seed.first.data) {
+    //             cerr << d;
+    //         } 
+    //         cerr << " offset: " << seed.second << endl;
+    //     }
+    // }
     
+    // /* Perf Profiling*/
+    // PerfEvent e;
+    // e.startCounters();
+    // __itt_task_begin(domain, __itt_null, __itt_null, handle_main);
+    // _iit_resume();
     vector<GaplessExtension> cluster_extension = extender->extend(seed_matchings, sequence);
+    // __itt_task_end(domain);
+    // e.stopCounters();
+    // for (unsigned i=0; i<e.names.size(); i++)
+    //     perf_utils_add(e.events[i].readCounter(), i, omp_get_thread_num());
+    
+    // // Dump all extensions for each sequence
+    // #pragma omp critical (cerr)
+    // {
+    //     dump_proxy_extensions(cluster_extension, sequence);
+    // }
 
     if (show_work) {
         #pragma omp critical (cerr)
@@ -4073,6 +4274,7 @@ static inline void add_to_path(Path* target, Path* to_append) {
 };
 
 void MinimizerMapper::find_optimal_tail_alignments(const Alignment& aln, const vector<GaplessExtension>& extended_seeds, LazyRNG& rng, Alignment& best, Alignment& second_best) const {
+    // double start = omp_get_wtime();
 
     // This assumes that full-length extensions have the highest scores.
     // We want to align at least two extensions and at least one
@@ -4325,6 +4527,8 @@ void MinimizerMapper::find_optimal_tail_alignments(const Alignment& aln, const v
     add_to_path(second_best.mutable_path(), &second_middle);
     add_to_path(second_best.mutable_path(), &second_right);
     second_best.set_identity(identity(second_best.path()));
+    // double end = omp_get_wtime();
+    // time_utils_add(start, end, 2, omp_get_thread_num());
 }
 
 //-----------------------------------------------------------------------------
@@ -4450,6 +4654,7 @@ pair<Path, size_t> MinimizerMapper::get_best_alignment_against_any_tree(const ve
 
 vector<TreeSubgraph> MinimizerMapper::get_tail_forest(const GaplessExtension& extended_seed,
     size_t read_length, bool left_tails, size_t* longest_detectable_gap) const {
+    // double start = omp_get_wtime();
 
     // We will fill this in with all the trees we return
     vector<TreeSubgraph> to_return;
@@ -4563,6 +4768,9 @@ vector<TreeSubgraph> MinimizerMapper::get_tail_forest(const GaplessExtension& ex
 #ifdef debug
     cerr << "Found " << to_return.size() << " trees" << endl;
 #endif
+
+    // double end = omp_get_wtime();
+    // time_utils_add(start, end, 2, omp_get_thread_num());
     
     // Now we have all the trees!
     return to_return;
@@ -4604,6 +4812,7 @@ void MinimizerMapper::dfs_gbwt(const Position& from, size_t walk_distance,
 
 void MinimizerMapper::dfs_gbwt(handle_t from_handle, size_t from_offset, size_t walk_distance,
     const function<void(const handle_t&)>& enter_handle, const function<void(void)> exit_handle) const {
+    // double start = omp_get_wtime();
     
     // Turn from_handle into a SearchState for everything on it.
     gbwt::SearchState start_state = gbwt_graph.get_state(from_handle);
@@ -4615,8 +4824,12 @@ void MinimizerMapper::dfs_gbwt(handle_t from_handle, size_t from_offset, size_t 
 void MinimizerMapper::dfs_gbwt(const gbwt::SearchState& start_state, size_t from_offset, size_t walk_distance,
     const function<void(const handle_t&)>& enter_handle, const function<void(void)> exit_handle) const {
     
+    // double start = omp_get_wtime();
+    
     if (start_state.empty()) {
         // No haplotypes even visit the first node. Stop.
+        // double end = omp_get_wtime();
+        // time_utils_add(start, end, 3, omp_get_thread_num());
         return;
     }
     
@@ -4716,6 +4929,8 @@ void MinimizerMapper::dfs_gbwt(const gbwt::SearchState& start_state, size_t from
         // Remove ourselves from the stack.
         stack.pop();
     }
+    // double end = omp_get_wtime();
+    // time_utils_add(start, end, 3, omp_get_thread_num());
 }
 
 //-----------------------------------------------------------------------------

@@ -1027,6 +1027,10 @@ protected:
     
     /// Print information about a read pair to be aligned
     static void dump_debug_query(const Alignment& aln1, const Alignment& aln2);
+
+    /// Jessica's proxy dump
+    static void dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence);
+    static void dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence);
     
     /// Length at which we cut over to long-alignment logging.
     const static size_t LONG_LIMIT = 256;
