@@ -15,7 +15,7 @@
 #include <chrono>
 #include <mutex>
 
-#include "time-utils.h"
+// #include "time-utils.h"
 // #include "perf-utils.h"
 
 #include "subcommand.hpp"
@@ -449,7 +449,7 @@ void help_giraffe(char** argv, const BaseOptionGroup& parser, bool full_help) {
 int main_giraffe(int argc, char** argv) {
 
     std::chrono::time_point<std::chrono::system_clock> launch = std::chrono::system_clock::now();
-    double start_inst = omp_get_wtime();
+    // double start_inst = omp_get_wtime();
     // __itt_pause();
 
     // For haplotype sampling.
@@ -1615,10 +1615,10 @@ int main_giraffe(int argc, char** argv) {
         double mega_instructions_per_second = total_instructions / cpu_seconds / 1E6;
 
         // perf_utils_dump();
-        double end_inst = omp_get_wtime();
-        time_utils_add(start_inst, end_inst, 1, omp_get_thread_num());
+        // double end_inst = omp_get_wtime();
+        // time_utils_add(start_inst, end_inst, 1, omp_get_thread_num());
         
-        time_utils_dump();
+        // time_utils_dump();
                 
         if (show_progress) {
             // Log to standard error

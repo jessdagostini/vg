@@ -26,10 +26,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
+#include <time.h>
 
 // #include "time-utils.h"
-#include "perf-event.hpp"
-#include "perf-utils.h"
+// #include "perf-event.hpp"
+// #include "perf-utils.h"
 
 // Turn on debugging prints
 //#define debug
@@ -540,8 +541,16 @@ void MinimizerMapper::dump_debug_seeds(const VectorView<Minimizer>& minimizers, 
 }
 
 void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence) {
+    // Capture current time to dump filename
+    time_t now = time(0);
+
+    // convert now to string form
+    char buffer[80];
+    strftime(buffer, 80, "%Y%m%d%H%M", localtime(&now));
+    string date_time(buffer);
+    
     // Specify the file name
-    const char* fileName = "dump_proxy_yeast_new.bin";
+    const char* fileName = ("dump_miniGiraffe_" + date_time + ".bin").c_str();
 
     // Create an output file stream
     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
@@ -572,49 +581,55 @@ void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, s
     outFile.close();
 }
 
-// void MinimizerMapper::dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence) {
-//     // Specify the file name
-//     const char* fileName = "dump_proxy_yeast_new_extension.bin";
+void MinimizerMapper::dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence) {
+   // Capture current time to dump filename
+    time_t now = time(0);
 
-//     // Create an output file stream
-//     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
+    // convert now to string form
+    char buffer[80];
+    strftime(buffer, 80, "%Y%m%d%H%M", localtime(&now));
+    string date_time(buffer);
+    const char* fileName = ("dump_miniGiraffe_" + date_time + "_extension.bin").c_str();
 
-//     if (!outFile) {
-//         std::cerr << "Error opening file: " << fileName << std::endl;
-//     }
+    // Create an output file stream
+    std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
 
-//     // Write string to the file
-//     outFile.write(sequence.c_str(), sequence.size() + 1); // Include null terminator
+    if (!outFile) {
+        std::cerr << "Error opening file: " << fileName << std::endl;
+    }
+
+    // Write string to the file
+    outFile.write(sequence.c_str(), sequence.size() + 1); // Include null terminator
     
-//     // Write how many extensions we have
-//     size_t extensions = cluster_extension.size();
-//     outFile.write(reinterpret_cast<const char*>(&extensions), sizeof(extensions));
+    // Write how many extensions we have
+    size_t extensions = cluster_extension.size();
+    outFile.write(reinterpret_cast<const char*>(&extensions), sizeof(extensions));
     
-//     for (auto& e : cluster_extension) {
-//         // Node offset
-//         outFile.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
+    for (auto& e : cluster_extension) {
+        // Node offset
+        outFile.write(reinterpret_cast<const char*>(&e.offset), sizeof(e.offset));
         
-//         // Read Interval
-//         outFile.write(reinterpret_cast<const char*>(&e.read_interval), sizeof(e.read_interval));
+        // Read Interval
+        outFile.write(reinterpret_cast<const char*>(&e.read_interval), sizeof(e.read_interval));
         
-//         //Score
-//         outFile.write(reinterpret_cast<const char*>(&e.score), sizeof(e.score));
+        //Score
+        outFile.write(reinterpret_cast<const char*>(&e.score), sizeof(e.score));
         
-//         size_t mismatches = e.mismatch_positions.size();
-//         // Write how many mismatches
-//         outFile.write(reinterpret_cast<const char*>(&mismatches), sizeof(mismatches));
+        size_t mismatches = e.mismatch_positions.size();
+        // Write how many mismatches
+        outFile.write(reinterpret_cast<const char*>(&mismatches), sizeof(mismatches));
         
-//         // Mismatches
-//         if (mismatches > 0) {
-//             for (size_t i = 0; i < mismatches; i++) {
-//                 outFile.write(reinterpret_cast<const char*>(&e.mismatch_positions[i]), sizeof(e.mismatch_positions[i]));
-//             }
-//         }
-//     }
+        // Mismatches
+        if (mismatches > 0) {
+            for (size_t i = 0; i < mismatches; i++) {
+                outFile.write(reinterpret_cast<const char*>(&e.mismatch_positions[i]), sizeof(e.mismatch_positions[i]));
+            }
+        }
+    }
     
-//     // Close the file stream
-//     outFile.close();
-// }
+    // Close the file stream
+    outFile.close();
+}
 
 void MinimizerMapper::dump_debug_query(const Alignment& aln) {
     cerr << log_name() << "Read " << aln.name() << ": " ;
@@ -664,6 +679,9 @@ vector<Alignment> MinimizerMapper::map_from_extensions(Alignment& aln) {
         #pragma omp critical (cerr)
         dump_debug_query(aln);
     }
+
+    // #pragma omp critical (cerr)
+    // cerr << aln.sequence() << endl;
     
     // Make a new funnel instrumenter to watch us map this read.
     Funnel funnel;
@@ -3888,10 +3906,10 @@ vector<GaplessExtension> MinimizerMapper::extend_cluster(const Cluster& cluster,
     }
 
     // Dump all seeds for each sequence
-    // #pragma omp critical (cerr)
-    // {
-    //     dump_proxy_seeds(seed_matchings, sequence);
-    // }
+    #pragma omp critical (cerr)
+    {
+        dump_proxy_seeds(seed_matchings, sequence);
+    }
 
     // Dump debug seed_matching a.k.a cluster_type
     // for (auto seed : seed_matchings) {
@@ -3918,10 +3936,10 @@ vector<GaplessExtension> MinimizerMapper::extend_cluster(const Cluster& cluster,
     //     perf_utils_add(e.events[i].readCounter(), i, omp_get_thread_num());
     
     // // Dump all extensions for each sequence
-    // #pragma omp critical (cerr)
-    // {
-    //     dump_proxy_extensions(cluster_extension, sequence);
-    // }
+    #pragma omp critical (cerr)
+    {
+        dump_proxy_extensions(cluster_extension, sequence);
+    }
 
     if (show_work) {
         #pragma omp critical (cerr)
