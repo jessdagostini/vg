@@ -542,7 +542,7 @@ void MinimizerMapper::dump_debug_seeds(const VectorView<Minimizer>& minimizers, 
 
 void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence) {    
     // Specify the file name
-    const char* fileName = ("dump_miniGiraffe_seeds.bin").c_str();
+    const char* fileName = "dump_miniGiraffe_seeds.bin";
 
     // Create an output file stream
     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
@@ -574,7 +574,7 @@ void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, s
 }
 
 void MinimizerMapper::dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence) {
-    const char* fileName = ("dump_miniGiraffe_extension.bin").c_str();
+    const char* fileName = "dump_miniGiraffe_extension.bin";
 
     // Create an output file stream
     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
