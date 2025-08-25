@@ -540,17 +540,9 @@ void MinimizerMapper::dump_debug_seeds(const VectorView<Minimizer>& minimizers, 
     }
 }
 
-void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence) {
-    // Capture current time to dump filename
-    time_t now = time(0);
-
-    // convert now to string form
-    char buffer[80];
-    strftime(buffer, 80, "%Y%m%d%H%M", localtime(&now));
-    string date_time(buffer);
-    
+void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, string sequence) {    
     // Specify the file name
-    const char* fileName = ("dump_miniGiraffe_" + date_time + ".bin").c_str();
+    const char* fileName = ("dump_miniGiraffe_seeds.bin").c_str();
 
     // Create an output file stream
     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
@@ -582,14 +574,7 @@ void MinimizerMapper::dump_proxy_seeds(GaplessExtender::cluster_type& cluster, s
 }
 
 void MinimizerMapper::dump_proxy_extensions(vector<GaplessExtension> cluster_extension, string sequence) {
-   // Capture current time to dump filename
-    time_t now = time(0);
-
-    // convert now to string form
-    char buffer[80];
-    strftime(buffer, 80, "%Y%m%d%H%M", localtime(&now));
-    string date_time(buffer);
-    const char* fileName = ("dump_miniGiraffe_" + date_time + "_extension.bin").c_str();
+    const char* fileName = ("dump_miniGiraffe_extension.bin").c_str();
 
     // Create an output file stream
     std::ofstream outFile(fileName, std::ios::binary | std::ios::app);
